@@ -17,7 +17,7 @@
     </div>
     @endif
     
-    @if($errors->any())
+    @if(isset($errors) && $errors->any())
     <div class="toast toast-error show">
         <div class="d-flex align-items-center">
             <i class="fas fa-exclamation-circle text-danger me-2"></i>

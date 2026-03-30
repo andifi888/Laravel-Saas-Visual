@@ -2,13 +2,12 @@
 
 namespace App\Services;
 
+use App\Models\Customer;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
-use App\Models\Category;
-use App\Models\Customer;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 
 class SalesAnalyticsService
 {
@@ -17,11 +16,11 @@ class SalesAnalyticsService
     public function getSalesOverview(array $filters = []): array
     {
         $cacheKey = $this->getCacheKey('sales_overview', $filters);
-        
+
         return Cache::remember($cacheKey, $this->cacheMinutes * 60, function () use ($filters) {
             $query = Order::query();
             $this->applyFilters($query, $filters);
-            
+
             return [
                 'total_revenue' => $query->sum('total'),
                 'total_orders' => $query->count(),
@@ -36,19 +35,19 @@ class SalesAnalyticsService
     public function getSalesOverTime(array $filters = []): array
     {
         $cacheKey = $this->getCacheKey('sales_over_time', $filters);
-        
+
         return Cache::remember($cacheKey, $this->cacheMinutes * 60, function () use ($filters) {
             $query = Order::query();
             $this->applyFilters($query, $filters);
-            
+
             $groupBy = $filters['group_by'] ?? 'day';
-            $dateFormat = match($groupBy) {
+            $dateFormat = match ($groupBy) {
                 'month' => '%Y-%m',
                 'week' => '%x-W%v',
                 'year' => '%Y',
                 default => '%Y-%m-%d',
             };
-            
+
             $data = $query
                 ->selectRaw("DATE_FORMAT(order_date, '{$dateFormat}') as period")
                 ->selectRaw('SUM(total) as revenue')
@@ -57,7 +56,7 @@ class SalesAnalyticsService
                 ->groupBy('period')
                 ->orderBy('period')
                 ->get();
-            
+
             return [
                 'labels' => $data->pluck('period')->toArray(),
                 'revenue' => $data->pluck('revenue')->toArray(),
@@ -70,11 +69,22 @@ class SalesAnalyticsService
     public function getRevenueByCategory(array $filters = []): array
     {
         $cacheKey = $this->getCacheKey('revenue_by_category', $filters);
-        
+
         return Cache::remember($cacheKey, $this->cacheMinutes * 60, function () use ($filters) {
             $query = OrderItem::query();
-            $this->applyFilters($query, $filters, 'order');
-            
+
+            if (! empty($filters['start_date'])) {
+                $query->whereHas('order', function ($q) use ($filters) {
+                    $q->whereDate('order_date', '>=', $filters['start_date']);
+                });
+            }
+
+            if (! empty($filters['end_date'])) {
+                $query->whereHas('order', function ($q) use ($filters) {
+                    $q->whereDate('order_date', '<=', $filters['end_date']);
+                });
+            }
+
             $data = $query
                 ->join('products', 'order_items.product_id', '=', 'products.id')
                 ->join('categories', 'products.category_id', '=', 'categories.id')
@@ -84,7 +94,7 @@ class SalesAnalyticsService
                 ->groupBy('categories.id', 'categories.name')
                 ->orderByDesc('revenue')
                 ->get();
-            
+
             return [
                 'categories' => $data->pluck('category')->toArray(),
                 'revenue' => $data->pluck('revenue')->toArray(),
@@ -96,11 +106,22 @@ class SalesAnalyticsService
     public function getRevenueByProduct(array $filters = [], int $limit = 10): array
     {
         $cacheKey = $this->getCacheKey('revenue_by_product', $filters);
-        
+
         return Cache::remember($cacheKey, $this->cacheMinutes * 60, function () use ($filters, $limit) {
             $query = OrderItem::query();
-            $this->applyFilters($query, $filters, 'order');
-            
+
+            if (! empty($filters['start_date'])) {
+                $query->whereHas('order', function ($q) use ($filters) {
+                    $q->whereDate('order_date', '>=', $filters['start_date']);
+                });
+            }
+
+            if (! empty($filters['end_date'])) {
+                $query->whereHas('order', function ($q) use ($filters) {
+                    $q->whereDate('order_date', '<=', $filters['end_date']);
+                });
+            }
+
             $data = $query
                 ->join('products', 'order_items.product_id', '=', 'products.id')
                 ->selectRaw('products.name as product')
@@ -111,7 +132,7 @@ class SalesAnalyticsService
                 ->orderByDesc('revenue')
                 ->limit($limit)
                 ->get();
-            
+
             return [
                 'products' => $data->pluck('product')->toArray(),
                 'revenue' => $data->pluck('revenue')->toArray(),
@@ -124,11 +145,22 @@ class SalesAnalyticsService
     public function getSalesDistribution(array $filters = []): array
     {
         $cacheKey = $this->getCacheKey('sales_distribution', $filters);
-        
+
         return Cache::remember($cacheKey, $this->cacheMinutes * 60, function () use ($filters) {
             $query = OrderItem::query();
-            $this->applyFilters($query, $filters, 'order');
-            
+
+            if (! empty($filters['start_date'])) {
+                $query->whereHas('order', function ($q) use ($filters) {
+                    $q->whereDate('order_date', '>=', $filters['start_date']);
+                });
+            }
+
+            if (! empty($filters['end_date'])) {
+                $query->whereHas('order', function ($q) use ($filters) {
+                    $q->whereDate('order_date', '<=', $filters['end_date']);
+                });
+            }
+
             $data = $query
                 ->join('products', 'order_items.product_id', '=', 'products.id')
                 ->join('categories', 'products.category_id', '=', 'categories.id')
@@ -136,7 +168,7 @@ class SalesAnalyticsService
                 ->selectRaw('SUM(order_items.subtotal) as value')
                 ->groupBy('categories.id', 'categories.name')
                 ->get();
-            
+
             return [
                 'names' => $data->pluck('name')->toArray(),
                 'values' => $data->pluck('value')->toArray(),
@@ -147,11 +179,11 @@ class SalesAnalyticsService
     public function getDailySalesHeatmap(array $filters = []): array
     {
         $cacheKey = $this->getCacheKey('daily_sales_heatmap', $filters);
-        
+
         return Cache::remember($cacheKey, $this->cacheMinutes * 60, function () use ($filters) {
             $query = Order::query();
             $this->applyFilters($query, $filters);
-            
+
             $data = $query
                 ->selectRaw('DAYNAME(order_date) as day')
                 ->selectRaw('HOUR(order_date) as hour')
@@ -159,22 +191,22 @@ class SalesAnalyticsService
                 ->selectRaw('COUNT(*) as count')
                 ->groupBy('day', 'hour')
                 ->get();
-            
+
             $days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
             $hours = range(0, 23);
-            
+
             $heatmapData = [];
             foreach ($days as $day) {
                 foreach ($hours as $hour) {
-                    $match = $data->firstWhere(fn($d) => $d->day === $day && $d->hour == $hour);
+                    $match = $data->firstWhere(fn ($d) => $d->day === $day && $d->hour == $hour);
                     $heatmapData[] = [
                         $hour,
                         array_search($day, $days),
-                        $match ? (float)$match->value : 0,
+                        $match ? (float) $match->value : 0,
                     ];
                 }
             }
-            
+
             return [
                 'hours' => $hours,
                 'days' => $days,
@@ -186,11 +218,11 @@ class SalesAnalyticsService
     public function getTopCustomers(array $filters = [], int $limit = 10): array
     {
         $cacheKey = $this->getCacheKey('top_customers', $filters);
-        
+
         return Cache::remember($cacheKey, $this->cacheMinutes * 60, function () use ($filters, $limit) {
             $query = Order::query();
             $this->applyFilters($query, $filters);
-            
+
             $data = $query
                 ->join('customers', 'orders.customer_id', '=', 'customers.id')
                 ->selectRaw('customers.name as customer')
@@ -201,7 +233,7 @@ class SalesAnalyticsService
                 ->orderByDesc('total_spent')
                 ->limit($limit)
                 ->get();
-            
+
             return [
                 'customers' => $data->pluck('customer')->toArray(),
                 'emails' => $data->pluck('email')->toArray(),
@@ -214,43 +246,43 @@ class SalesAnalyticsService
     public function getTrendIndicators(array $filters = []): array
     {
         $cacheKey = $this->getCacheKey('trend_indicators', $filters);
-        
+
         return Cache::remember($cacheKey, $this->cacheMinutes * 60, function () use ($filters) {
             $currentPeriod = Order::query();
             $previousPeriod = Order::query();
-            
+
             $this->applyFilters($currentPeriod, $filters);
-            
+
             $previousFilters = $filters;
             if (isset($previousFilters['start_date']) && isset($previousFilters['end_date'])) {
-                $start = \Carbon\Carbon::parse($previousFilters['start_date']);
-                $end = \Carbon\Carbon::parse($previousFilters['end_date']);
+                $start = Carbon::parse($previousFilters['start_date']);
+                $end = Carbon::parse($previousFilters['end_date']);
                 $diff = $start->diffInDays($end);
-                
+
                 $previousFilters['start_date'] = $start->subDays($diff)->toDateString();
                 $previousFilters['end_date'] = $end->subDays($diff + 1)->toDateString();
             }
-            
+
             $this->applyFilters($previousPeriod, $previousFilters);
-            
+
             $currentRevenue = $currentPeriod->sum('total');
             $previousRevenue = $previousPeriod->sum('total');
-            $revenueChange = $previousRevenue > 0 
-                ? (($currentRevenue - $previousRevenue) / $previousRevenue) * 100 
+            $revenueChange = $previousRevenue > 0
+                ? (($currentRevenue - $previousRevenue) / $previousRevenue) * 100
                 : 0;
-            
+
             $currentOrders = $currentPeriod->count();
             $previousOrders = $previousPeriod->count();
-            $ordersChange = $previousOrders > 0 
-                ? (($currentOrders - $previousOrders) / $previousOrders) * 100 
+            $ordersChange = $previousOrders > 0
+                ? (($currentOrders - $previousOrders) / $previousOrders) * 100
                 : 0;
-            
+
             $currentProfit = $currentPeriod->sum('profit');
             $previousProfit = $previousPeriod->sum('profit');
-            $profitChange = $previousProfit > 0 
-                ? (($currentProfit - $previousProfit) / $previousProfit) * 100 
+            $profitChange = $previousProfit > 0
+                ? (($currentProfit - $previousProfit) / $previousProfit) * 100
                 : 0;
-            
+
             return [
                 'revenue' => [
                     'value' => $currentRevenue,
@@ -271,28 +303,40 @@ class SalesAnalyticsService
         });
     }
 
-    protected function applyFilters($query, array $filters, string $relation = null): void
+    protected function applyFilters($query, array $filters, ?string $relation = null): void
     {
-        $prefix = $relation ? "{$relation}." : "";
-        
-        if (!empty($filters['start_date'])) {
-            $query->whereDate("{$prefix}order_date", '>=', $filters['start_date']);
+        $tablePrefix = $relation ? "{$relation}s." : '';
+
+        if (! empty($filters['start_date'])) {
+            $query->whereDate("{$tablePrefix}order_date", '>=', $filters['start_date']);
         }
-        
-        if (!empty($filters['end_date'])) {
-            $query->whereDate("{$prefix}order_date", '<=', $filters['end_date']);
+
+        if (! empty($filters['end_date'])) {
+            $query->whereDate("{$tablePrefix}order_date", '<=', $filters['end_date']);
         }
-        
-        if (!empty($filters['category_id'])) {
-            $query->whereHas('items.product', function ($q) use ($filters) {
-                $q->where('category_id', $filters['category_id']);
-            });
+
+        if (! empty($filters['category_id'])) {
+            if ($relation === 'order') {
+                $query->whereHas('product', function ($q) use ($filters) {
+                    $q->where('category_id', $filters['category_id']);
+                });
+            } else {
+                $query->whereHas('items.product', function ($q) use ($filters) {
+                    $q->where('category_id', $filters['category_id']);
+                });
+            }
         }
-        
-        if (!empty($filters['product_id'])) {
-            $query->whereHas('items', function ($q) use ($filters) {
-                $q->where('product_id', $filters['product_id']);
-            });
+
+        if (! empty($filters['product_id'])) {
+            if ($relation === 'order') {
+                $query->whereHas('items', function ($q) use ($filters) {
+                    $q->where('product_id', $filters['product_id']);
+                });
+            } else {
+                $query->whereHas('items', function ($q) use ($filters) {
+                    $q->where('product_id', $filters['product_id']);
+                });
+            }
         }
     }
 
@@ -300,7 +344,8 @@ class SalesAnalyticsService
     {
         $tenant = app('tenant');
         $tenantId = $tenant ? $tenant->id : 'guest';
-        return "analytics_{$tenantId}_{$type}_" . md5(json_encode($filters));
+
+        return "analytics_{$tenantId}_{$type}_".md5(json_encode($filters));
     }
 
     public function clearCache(): void

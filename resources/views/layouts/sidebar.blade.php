@@ -52,12 +52,6 @@
         <div class="pt-4 pb-2">
             <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Management</span>
         </div>
-        
-        <a href="{{ route('reports.index') }}" 
-           class="nav-link-custom flex items-center space-x-3 {{ request()->routeIs('reports.*') ? 'active' : '' }}">
-            <i class="fas fa-file-alt w-5"></i>
-            <span>Reports</span>
-        </a>
         @endcan
         
         @role('Admin|Manager')
@@ -84,12 +78,17 @@
                     <p class="text-gray-500 dark:text-gray-400 text-xs">{{ auth()->user()->roles->first()?->name }}</p>
                 </div>
             </div>
-            <form method="POST" action="{{ route('logout') }}">
-                @csrf
-                <button type="submit" class="text-gray-500 hover:text-red-500 transition">
-                    <i class="fas fa-sign-out-alt"></i>
-                </button>
-            </form>
+            <div class="flex items-center space-x-2">
+                <a href="{{ route('profile.edit') }}" class="text-gray-500 hover:text-blue-500 transition" title="Profile">
+                    <i class="fas fa-user"></i>
+                </a>
+                <form method="POST" action="{{ route('logout') }}">
+                    @csrf
+                    <button type="submit" class="text-gray-500 hover:text-red-500 transition">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </button>
+                </form>
+            </div>
         </div>
     </div>
 </aside>
