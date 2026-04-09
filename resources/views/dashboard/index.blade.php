@@ -186,8 +186,11 @@
 <script>
 window.echartsInstances = [];
 
+const AUTO_REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes in milliseconds
+
 document.addEventListener('DOMContentLoaded', function() {
     loadCharts();
+    setInterval(loadCharts, AUTO_REFRESH_INTERVAL);
 });
 
 async function loadCharts() {
